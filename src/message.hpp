@@ -6,6 +6,8 @@
 #include "types.hpp"
 
 #include <memory>
+#include <ostream>
+#include <sstream>
 
 namespace consensus
 {
@@ -16,7 +18,7 @@ struct TypeList {};
 template<typename Func, typename BaseClass, typename DerivedClass>
 void caller(Func f, BaseClass const & b)
 {
-    DerivedClass* d = dynamic_cast<DerivedClass*>(&b);
+    DerivedClass const * d = dynamic_cast<DerivedClass const *>(&b);
     if(d != nullptr)
         f(*d);
 }
@@ -24,7 +26,7 @@ void caller(Func f, BaseClass const & b)
 template<typename Func, typename BaseClass, typename ... DerivedClass>
 void cast_and_call(Func f, BaseClass const & b, TypeList<DerivedClass...>)
 {
-    (caller<DerivedClass>(f,b), ...);
+    (caller<Func, BaseClass, DerivedClass>(f,b), ...);
 }
 
 class MessageBase
@@ -34,13 +36,10 @@ public:
     virtual IdType   getId() const = 0;
     virtual TermType getTerm() const = 0;
     virtual std::unique_ptr<MessageBase> clone() const = 0;
-
-    template<typename T>
-    
-    T const* cast() const { return dynamic_cast<T const*>(this); }
-    template <typename T>
-    bool is_of_type() const { return cast<T>() != nullptr; }
+    virtual std::string write() const = 0;
 };
+
+std::ostream & operator<<(std::ostream & os, MessageBase const & m);
 
 class VoteRequest : public MessageBase
 {
@@ -54,10 +53,16 @@ public:
         id(id_), term(term_), log_size(log_size_), last_term(last_term_)
     {}
 
-    virtual std::unique_ptr<MessageBase> clone() const final { return std::make_unique<VoteRequest>(*this); };
+    std::unique_ptr<MessageBase> clone() const final { return std::make_unique<VoteRequest>(*this); };
 
     IdType getId() const final { return id; }
     TermType getTerm() const final { return term; }
+    std::string write() const final 
+    { 
+        std::stringstream ss;
+        ss << "VoteRequest: " << id << ", " << term << ", " << log_size << ", " << last_term;
+        return ss.str();
+    }
 };
 
 class VoteResponse : public MessageBase
@@ -74,6 +79,13 @@ public:
 
     IdType getId() const final { return id; }
     TermType getTerm() const final { return term; }
+    std::string write() const final 
+    { 
+        std::stringstream ss;
+        ss << "VoteResponse: " << id << ", " << term << ", " << granted;
+        return ss.str();
+    }
+
 };
 
 class LogRequest : public MessageBase
@@ -93,6 +105,13 @@ public:
 
     IdType getId() const final { return id; }
     TermType getTerm() const final { return term; }
+    std::string write() const final 
+    { 
+        std::stringstream ss;
+        ss << "VoteRequest: " << id << ", " << term << ", " << prefix_length << ", " << prefix_term << ", " << commit_length << ", [" << log << "]";
+        return ss.str();
+    }
+
 };
 
 class LogResponse : public MessageBase
@@ -110,6 +129,12 @@ public:
 
     IdType getId() const final { return id; }
     TermType getTerm() const final { return term; }
+    std::string write() const final 
+    { 
+        std::stringstream ss;
+        ss << "VoteRequest: " << id << ", " << term << ", " << ack << ", " << success;
+        return ss.str();
+    }
 };
 
 using MessageTypes = TypeList<VoteRequest, VoteResponse>;

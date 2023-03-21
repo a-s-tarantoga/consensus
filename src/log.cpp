@@ -1,7 +1,5 @@
 // (C) 2023 Martin Huenniger
 
-#pragma once
-
 #include "log.hpp"
 #include "message.hpp"
 
@@ -15,5 +13,31 @@ LogEntry::LogEntry(LogEntry const & other) :
 LogEntry::LogEntry(TermType term_, MessageBase const & msg_) :
     term(term_), message(msg_.clone())
 {}
+
+std::ostream & operator<<(std::ostream & os, LogEntry const & e)
+{
+    if(e.message == nullptr)
+        return os << "Term: " << e.term << ", nullptr";
+    return os << "Term: " << e.term << ", " << e.message.get();
+
+}
+
+std::ostream & operator<<(std::ostream & os, LogType const & log)
+{
+    bool first {true};
+    for(LogEntry const & entry : log)
+    {
+        if(first)
+        {
+            first = false;
+        }
+        else 
+        {
+            os << ", ";   
+        }
+        os << entry;
+    }
+    return os;
+}
 
 }

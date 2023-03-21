@@ -5,6 +5,7 @@
 #include "types.hpp"
 
 #include <memory>
+#include <ostream>
 #include <vector>
 
 namespace consensus
@@ -14,6 +15,7 @@ class MessageBase;
 
 struct LogEntry
 {
+    LogEntry() = default;
     LogEntry(LogEntry const & other);
 
     LogEntry(TermType term_, MessageBase const & msg_);
@@ -22,6 +24,9 @@ struct LogEntry
     std::unique_ptr<MessageBase> message {};
 };
 
+
 using LogType = std::vector<LogEntry>;
 
+std::ostream & operator<<(std::ostream & os, LogEntry const & e);
+std::ostream & operator<<(std::ostream & os, LogType const & log);
 }

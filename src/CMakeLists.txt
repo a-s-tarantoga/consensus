@@ -2,10 +2,16 @@
 
 # Add main.cpp file of project root directory as source file
 set(SOURCE_FILES 
-        log.hpp,    
         log.cpp
-        main.cpp, 
+        log.hpp    
+        main.cpp
+        message.cpp
+        message.hpp
+        node_base.hpp
+        node_manager.hpp
+        raft.hpp
+        types.hpp
     )
 
 # Add executable target with source files listed in SOURCE_FILES variable
-add_executable(schedule_planner ${SOURCE_FILES})
+add_executable(tester ${SOURCE_FILES})

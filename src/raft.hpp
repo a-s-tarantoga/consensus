@@ -2,9 +2,12 @@
 
 #pragma once
 
-#include "message.hpp"
 #include "log.hpp"
+#include "message.hpp"
+#include "node_base.hpp"
+#include "node_manager.hpp"
 #include "types.hpp"
+
 
 #include <algorithm>
 #include <atomic>
@@ -21,78 +24,6 @@ namespace consensus
 {
 
 
-class NodeBase
-{
-public:
-    virtual ~NodeBase() = default;
-    virtual std::unique_ptr<NodeBase> clone() const = 0;
-    virtual void receive(MessageBase const & msg) = 0;
-    virtual IdType getId() const = 0;
-    virtual void setId(IdType id)  = 0;
-    virtual std::size_t getAckedLength() const = 0;
-    virtual void setAckedLength(std::size_t) = 0;
-    virtual std::size_t getSentLength() const = 0;
-    virtual void setSentLength(std::size_t) = 0;
-private:
-};
-
-class NodeManager
-{
-public:
-    using ContainerType = std::vector<std::unique_ptr<NodeBase>>;
-    using const_iterator = ContainerType::const_iterator;
-    using iterator       = ContainerType::iterator;
-
-    iterator begin() { return m_nodes.begin(); }
-    iterator end() { return m_nodes.end(); }
-    const_iterator begin() const { return m_nodes.begin(); }
-    const_iterator end() const { return m_nodes.end(); }
-
-    void AddNode(NodeBase & node)
-    {
-        m_nodes.emplace_back(std::move(node));
-        m_nodes.back()->setId(m_nodes.size());
-    }
-
-    void send(MessageBase const & msg, NodeBase & node)
-    {
-        node.receive(msg);
-    }
-
-    void send(MessageBase const & msg)
-    {
-        for(auto & node : m_nodes)
-            send(msg, *node);
-    }
-
-    void send(MessageBase const & msg, IdType id)
-    {
-        send(msg, *m_nodes[id]);
-    }
-
-    std::size_t numNodes() const {return m_nodes.size(); }
-
-    std::size_t quorum() const { return std::ceil( double(m_nodes.size() + 1) / 2.0 ); }
-
-    std::size_t getAckedLength(IdType id) { return m_nodes[id]->getAckedLength(); }
-    void setAckedLength(IdType id, std::size_t length) { m_nodes[id]->setAckedLength(length); }
-
-    std::size_t getSentLength(IdType id) { return m_nodes[id]->getSentLength(); }
-    void setSentLength(IdType id, std::size_t length) { m_nodes[id]->setSentLength(length); }
-
-    std::size_t acks(std::size_t length) const
-    {
-        std::size_t result {0}; 
-        for(auto const & node : m_nodes)
-            if(node->getAckedLength() > length)
-                ++result;
-        return result;
-    }
-
-private:
-    ContainerType m_nodes;
-};
-
 using ApplicationCallbackType = std::function<void(LogEntry const &)>;
 
 class RaftNode : public NodeBase
@@ -108,11 +39,19 @@ class RaftNode : public NodeBase
     std::size_t  m_acked_length {0};
 
     bool running {false};
-    NodeManager m_nodes {};
+    CommunicatorBase & m_comm;
     IdType m_id;
 
     ApplicationCallbackType appCallback {[](LogEntry const&) {}};
 public:
+
+    RaftNode(CommunicatorBase & comm) : 
+        m_comm(comm)
+    {
+        initialize();
+        initialize_election();
+        m_comm.AddNode(*this);
+    }
 
     virtual std::unique_ptr<NodeBase> clone() const { return std::make_unique<RaftNode>(*this); }
 
@@ -133,14 +72,26 @@ public:
 
 private:
 
+    std::size_t quorum() const { return std::ceil( double(m_comm.numNodes() + 1) / 2.0 ); }
+
+    std::size_t acks(std::size_t length) const
+    {
+        std::size_t result {0}; 
+        m_comm.for_each([&](NodeBase const & node){
+            if(node.getAckedLength() > length)
+                ++result;
+        });
+        return result;
+    }
+
     void replicate_log(IdType id, IdType followerId)
     {
-        auto prefix_length = m_nodes.getSentLength(followerId);
+        auto prefix_length = m_comm.getSentLength(followerId);
         LogType suffix(m_log.cbegin() + prefix_length, m_log.cend());
         TermType prefix_term = 0;
         if(prefix_term > 0)
             prefix_term = m_log.back().term;
-        m_nodes.send(LogRequest(id, m_current_term, prefix_length, prefix_term, m_commit_length, suffix), 
+        m_comm.send(LogRequest(id, m_current_term, prefix_length, prefix_term, m_commit_length, suffix), 
                      followerId);
     }
 
@@ -170,10 +121,10 @@ private:
 
     void commit_log_entries()
     {
-        auto minAcks = m_nodes.quorum();
+        auto minAcks = quorum();
         std::vector<std::size_t> ready {};
         for(std::size_t len {1}; len < m_log.size(); ++len)
-            if(m_nodes.acks(len) > minAcks)
+            if(acks(len) > minAcks)
                 ready.push_back(len);
         if(!ready.empty() && ready.back() > m_commit_length && m_log[ready.back()].term == m_current_term)
         {
@@ -191,9 +142,10 @@ private:
         m_votes_received = {};
         m_sent_length = 0;
         m_acked_length = 0;
+    }
 
-        // on nodeId suspects leader has failed or election timeout
-        //IdType nodeId;
+    void initialize_election()
+    {
         m_current_term += 1;
         m_current_role = Role::Candidate;
         m_voted_for = getId();
@@ -203,7 +155,7 @@ private:
         if(!m_log.empty())
             last_term = m_log.back().term;
 
-        m_nodes.send(VoteRequest(getId(), m_current_term, m_log.size(), last_term));
+        m_comm.send(VoteRequest(getId(), m_current_term, m_log.size(), last_term));
 
         start_election_timer();
     }
@@ -234,12 +186,12 @@ private:
         if(msg.getTerm() == m_current_term && log_ok && voted_for(msg.getId()))
         {
             m_voted_for = msg.getId();
-            m_nodes.send(VoteResponse( getId(), m_current_term, true ), 
+            m_comm.send(VoteResponse( getId(), m_current_term, true ), 
                          msg.getId());
         }
         else 
         {
-            m_nodes.send(VoteResponse(getId(), m_current_term, false ), 
+            m_comm.send(VoteResponse(getId(), m_current_term, false ), 
                          msg.getId());
         }
     }
@@ -249,14 +201,15 @@ private:
         if(m_current_role == Role::Candidate && msg.getTerm() == m_current_term && msg.granted)
         {
             m_votes_received.insert(msg.getId());
-            if(m_votes_received.size() >= m_nodes.quorum())
+            if(m_votes_received.size() >= quorum())
             {
                 m_current_role = Role::Leader;
                 m_current_leader = getId();
                 cancel_election_timer();
-                for(auto & node : m_nodes)
-                    if(node->getId() != getId())
-                        replicate_log(getId(), node->getId());
+                m_comm.for_each([this](NodeBase & node){
+                    if(node.getId() != getId())
+                        replicate_log(getId(), node.getId());
+                });
             }
         }
         else if(msg.getTerm() > m_current_term)
@@ -282,15 +235,15 @@ private:
             m_current_leader = msg.getId();
         }
         bool log_ok = (m_log.size() >= msg.log.size()) && (msg.prefix_length == 0 || m_log[msg.prefix_length-1].term == msg.prefix_term);
-        if(msg.getTerm() == m_current_term)
+        if(msg.getTerm() == m_current_term && log_ok)
         {
             append_entries(msg.prefix_length, msg.commit_length, msg.log);
             auto ack = msg.prefix_length + msg.log.size();
-            m_nodes.send(LogResponse(getId(), m_current_term, ack, true), getId());
+            m_comm.send(LogResponse(getId(), m_current_term, ack, true), getId());
         }
         else 
         {
-            m_nodes.send(LogResponse(getId(), m_current_term, 0, false), getId());
+            m_comm.send(LogResponse(getId(), m_current_term, 0, false), getId());
         }
     }
 
@@ -298,15 +251,15 @@ private:
     {
         if(msg.getTerm() == m_current_term && m_current_role == Role::Leader)
         {
-            if(msg.success && msg.ack >= m_nodes.getAckedLength(msg.getId()))
+            if(msg.success && msg.ack >= m_comm.getAckedLength(msg.getId()))
             {
-                m_nodes.setSentLength(msg.getId(), msg.ack);
-                m_nodes.setAckedLength(msg.getId(), msg.ack);
+                m_comm.setSentLength(msg.getId(), msg.ack);
+                m_comm.setAckedLength(msg.getId(), msg.ack);
                 commit_log_entries();
             }
-            else if(m_nodes.getSentLength(msg.getId()) > 0)
+            else if(m_comm.getSentLength(msg.getId()) > 0)
             {
-                m_nodes.setSentLength(msg.getId(), m_nodes.getSentLength(msg.getId()));
+                m_comm.setSentLength(msg.getId(), m_comm.getSentLength(msg.getId()));
                 replicate_log(getId(), msg.getId());
             }
         }
@@ -325,9 +278,10 @@ private:
         {
             m_log.emplace_back(LogEntry(m_current_term, msg));
             auto acked_length = m_log.size();
-            for(auto & node : m_nodes)
-                if(node->getId() != getId())
-                    replicate_log(getId(), node->getId());
+            m_comm.for_each([this](NodeBase& node){
+                if(node.getId() != getId())
+                    replicate_log(getId(), node.getId());
+            });
         }
         else 
         {
@@ -339,9 +293,10 @@ private:
     {
         if(m_current_role == Role::Leader)
         {
-            for(auto & node : m_nodes)
-                if(node->getId() != getId())
-                    replicate_log(getId(), node->getId());
+            m_comm.for_each([this](NodeBase & node){
+                if(node.getId() != getId())
+                    replicate_log(getId(), node.getId());
+            });
         }
     }
 
