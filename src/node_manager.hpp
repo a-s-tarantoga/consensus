@@ -6,6 +6,7 @@
 #include "types.hpp"
 
 #include <functional>
+#include <iostream>
 #include <unordered_map>
 
 namespace consensus
@@ -33,7 +34,7 @@ public:
 class LocalNodeManager : public CommunicatorBase
 {
 public:
-    using ContainerType = std::unordered_map<IdType,std::shared_ptr<NodeBase>>;
+    using ContainerType = std::unordered_map<IdType,NodeBase*>;
     using const_iterator = ContainerType::const_iterator;
     using iterator       = ContainerType::iterator;
 
@@ -45,14 +46,14 @@ public:
     virtual void AddNode(NodeBase & node) final
     {
         node.setId(numNodes());
-        m_nodes[node.getId()] = std::shared_ptr<NodeBase>(&node);
+        m_nodes[node.getId()] = &node;
     }
 
     virtual std::size_t numNodes() const final { return m_nodes.size(); }
 
     void send(MessageBase const & msg, NodeBase & node)
     {
-        node.receive(msg);
+        node.send(msg);
     }
 
     virtual void send(MessageBase const & msg) final

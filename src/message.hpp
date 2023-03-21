@@ -108,7 +108,7 @@ public:
     std::string write() const final 
     { 
         std::stringstream ss;
-        ss << "VoteRequest: " << id << ", " << term << ", " << prefix_length << ", " << prefix_term << ", " << commit_length << ", [" << log << "]";
+        ss << "LogRequest: " << id << ", " << term << ", " << prefix_length << ", " << prefix_term << ", " << commit_length << ", [" << log << "]";
         return ss.str();
     }
 
@@ -132,11 +132,39 @@ public:
     std::string write() const final 
     { 
         std::stringstream ss;
-        ss << "VoteRequest: " << id << ", " << term << ", " << ack << ", " << success;
+        ss << "LogResponse: " << id << ", " << term << ", " << ack << ", " << success;
         return ss.str();
     }
 };
 
-using MessageTypes = TypeList<VoteRequest, VoteResponse>;
+class StringMessage : public MessageBase
+{
+public:
+    IdType      id {NoneId};
+    TermType    term {0};
+    std::string string {};
+
+    StringMessage(IdType id_, TermType term_, std::string const & string_) : 
+        id(id_), term(term_), string(string_)
+    {}
+
+    StringMessage(StringMessage const & other) :
+        id(other.id), term(other.term), string(other.string)
+    {}
+
+    virtual std::unique_ptr<MessageBase> clone() const final { return std::make_unique<StringMessage>(*this); };
+
+    IdType getId() const final { return id; }
+    TermType getTerm() const final { return term; }
+    std::string write() const final 
+    { 
+        std::stringstream ss;
+        ss << "LogResponse: " << id << ", " << term << ", " << string;
+        return ss.str();
+    }
+    
+};
+
+using MessageTypes = TypeList<VoteRequest, VoteResponse, LogRequest, LogResponse, StringMessage>;
 
 }
