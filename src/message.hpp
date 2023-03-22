@@ -144,22 +144,18 @@ public:
     TermType    term {0};
     std::string string {};
 
-    StringMessage(IdType id_, TermType term_, std::string const & string_) : 
-        id(id_), term(term_), string(string_)
-    {}
-
-    StringMessage(StringMessage const & other) :
-        id(other.id), term(other.term), string(other.string)
+    StringMessage(std::string const & string_) : 
+        string(string_)
     {}
 
     virtual std::unique_ptr<MessageBase> clone() const final { return std::make_unique<StringMessage>(*this); };
 
-    IdType getId() const final { return id; }
-    TermType getTerm() const final { return term; }
+    IdType getId() const final { return 0; }
+    TermType getTerm() const final { return 0; }
     std::string write() const final 
     { 
         std::stringstream ss;
-        ss << "LogResponse: " << id << ", " << term << ", " << string;
+        ss << "StringMessage: " << string;
         return ss.str();
     }
     

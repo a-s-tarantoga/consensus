@@ -3,7 +3,7 @@
 #include "log.hpp"
 #include "message.hpp"
 #include "node_base.hpp"
-#include "node_manager.hpp"
+#include "local_node_manager.hpp"
 #include "raft.hpp"
 
 #include <chrono>
@@ -27,7 +27,7 @@ int main(int argc, char** argv)
     consensus::LocalNodeManager manager;
 
     std::vector<std::unique_ptr<consensus::NodeBase>> nodes;
-    for(std::size_t i{0}; i<2; ++i)
+    for(std::size_t i{0}; i<10; ++i)
     {
         nodes.emplace_back(std::make_unique<consensus::RaftNode>(manager));
         nodes.back()->setAppCallback([i=i](consensus::LogEntry const & entry){ std::cout << "node" << i << ": " << entry << std::endl;});
@@ -37,10 +37,10 @@ int main(int argc, char** argv)
     wait_and_count(10);
     for(auto & node : nodes)
     {
-        std::string msg = "Message from node " + std::to_string(node->getId());
-        node->broadcast(consensus::StringMessage(0, 0, msg));
-        wait_and_count(1);
+        node->broadcast(consensus::StringMessage("Message from node " + std::to_string(node->getId())));
+        //wait_and_count(1);
     }
+    wait_and_count(1);
     for(auto & node : nodes)
         node->stop();
     std::cout << std::endl;

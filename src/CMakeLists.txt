@@ -2,13 +2,16 @@
 
 # Add main.cpp file of project root directory as source file
 set(SOURCE_FILES 
+        communicator_base.hpp    
+        local_node_manager.cpp
+        local_node_manager.hpp
         log.cpp
         log.hpp    
         main.cpp
         message.cpp
         message.hpp
         node_base.hpp
-        node_manager.hpp
+        raft.cpp
         raft.hpp
         types.hpp
     )

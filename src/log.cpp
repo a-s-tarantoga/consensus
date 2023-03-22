@@ -18,7 +18,7 @@ std::ostream & operator<<(std::ostream & os, LogEntry const & e)
 {
     if(e.message == nullptr)
         return os << "Term: " << e.term << ", nullptr";
-    return os << "Term: " << e.term << ", " << e.message.get();
+    return os << "Term: " << e.term << ", " << *e.message;
 
 }
 
