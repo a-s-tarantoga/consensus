@@ -57,26 +57,6 @@ namespace consensus
     { 
         m_id = id; 
     }
-
-    std::size_t RaftNode::getAckedLength() const
-    { 
-        return m_acked_length; 
-    }
-
-    void RaftNode::setAckedLength(std::size_t length) 
-    { 
-        m_acked_length = length; 
-    }
-
-    std::size_t RaftNode::getSentLength() const
-    { 
-        return m_sent_length; 
-    }
-
-    void RaftNode::setSentLength(std::size_t length) 
-    { 
-        m_sent_length = length; 
-    }
     
     void RaftNode::broadcast(MessageBase const & msg)
     {
@@ -155,46 +135,54 @@ namespace consensus
     std::size_t RaftNode::acks(std::size_t length) const
     {
         std::size_t result {0}; 
-        m_comm.for_each([&](NodeBase const & node){
-            if(node.getAckedLength() > length)
+        for(auto const & [id, acks] : m_acked_length)
+            if(acks >= length)
                 ++result;
-        });
+        // std::cout << "acks(" << length << ") = " << result << std::endl;
         return result;
     }
 
     void RaftNode::replicate_log(IdType id, IdType followerId)
     {
-        std::cout << __PRETTY_FUNCTION__ << ", " << *this << std::endl;
-        auto prefix_length = m_comm.getSentLength(followerId);
+        //std::cout << __PRETTY_FUNCTION__ << ", " << *this << std::endl;
+        auto prefix_length = m_sent_length[followerId];
         LogType suffix(m_log.cbegin() + prefix_length, m_log.cend());
-        std::cout << "suffix: [" << suffix << "]" << std::endl;
+        // std::cout << "suffix: [" << suffix << "]" << std::endl;
         TermType prefix_term = 0;
-        if(prefix_term > 0)
+        if(prefix_length > 0)
             prefix_term = m_log.back().term;
-        std::cout << "Sending LogRequest" << std::endl;
+        // std::cout << "Sending LogRequest" << std::endl;
         m_comm.send(LogRequest(id, m_current_term, prefix_length, prefix_term, m_commit_length, suffix), 
                      followerId);
     }
 
     void RaftNode::append_entries(std::size_t prefix_length, std::size_t leader_commit, LogType const & suffix) 
     {
-        std::cout << __PRETTY_FUNCTION__ << ", " << *this << std::endl;
-        std::cout << "suffix: [" << suffix << "]" << std::endl;
+        // std::cout << __PRETTY_FUNCTION__ << ", " << *this << std::endl;
+        // std::cout << "suffix: [" << suffix << "]" << std::endl;
         if(!suffix.empty() && m_log.size() > prefix_length)
         {
+            // std::cout << "1111111111111111111" <<std::endl;
             auto index = std::min(m_log.size(), prefix_length + suffix.size()) - 1;
             if(m_log[index].term != suffix[index - prefix_length].term)
             {
                 m_log = LogType(m_log.begin(), m_log.begin() + prefix_length-1);
             }
         }
-        if(prefix_length + suffix.size() > m_log.size())
+        if(prefix_length + suffix.size() > m_log.size() )
         {
+            // std::cout << "222222222222222222222" << std::endl;
             for(std::size_t i {m_log.size() - prefix_length}; i < suffix.size(); ++i)
-                m_log.emplace_back(std::move(suffix[i]));
+            {
+                // std::cout << "suffix[" << i <<"] = " << suffix[i] << std::endl;
+                m_log.emplace_back(suffix[i]);
+            }
+            //std::cout << m_log << std::endl;
         }
+        // std::cout << "Leader commit " << leader_commit << ", m_commit_length: " << m_commit_length << std::endl;
         if(leader_commit > m_commit_length)
         {
+            // std::cout << "=================================================" << std::endl;
             for(auto it = m_log.cbegin() + m_commit_length; it != m_log.cend(); ++it)
             {
                 appCallback(*it);
@@ -204,14 +192,16 @@ namespace consensus
 
     void RaftNode::commit_log_entries()
     {
-        std::cout << __PRETTY_FUNCTION__ << ", " << *this << std::endl;
+        // std::cout << __PRETTY_FUNCTION__ << ", " << *this << std::endl;
         auto minAcks = quorum();
         std::vector<std::size_t> ready {};
         for(std::size_t len {1}; len < m_log.size(); ++len)
-            if(acks(len) > minAcks)
+            if(acks(len) >= minAcks)
                 ready.push_back(len);
-        if(!ready.empty() && ready.back() > m_commit_length && m_log[ready.back()].term == m_current_term)
+        // std::cout << "======================================" << (ready.empty() ? "No readies" : "Readies") << std::endl;
+        if(!ready.empty() && (ready.back() > m_commit_length) && (m_log[ready.back()].term == m_current_term))
         {
+            // std::cout << "+++++++++++++++++++++++++++" << std::endl;
             for(auto i {m_commit_length}; i < ready.back(); ++i)
                 appCallback(m_log[i]);
             m_commit_length = ready.back();
@@ -234,8 +224,8 @@ namespace consensus
         m_current_role = Role::Follower;
         m_current_leader = NoneId;
         m_votes_received = {};
-        m_sent_length = 0;
-        m_acked_length = 0;
+        m_sent_length = {};
+        m_acked_length = {};
         m_tainted = false;
     }
 
@@ -275,7 +265,7 @@ namespace consensus
 
     void RaftNode::receive(VoteRequest const & msg)
     {
-        std::cout << __PRETTY_FUNCTION__ << ", [" << *this << "] receiving: " << msg << std::endl;
+        //std::cout << __PRETTY_FUNCTION__ << ", [" << *this << "] receiving: " << msg << std::endl;
         if(msg.getTerm() > m_current_term)
         {
             m_current_term = msg.getTerm();
@@ -304,14 +294,14 @@ namespace consensus
 
     void RaftNode::receive(VoteResponse const & msg)
     {
-        std::cout << __PRETTY_FUNCTION__ << ", [" << *this << "] receiving: " << msg << std::endl;
+        //std::cout << __PRETTY_FUNCTION__ << ", [" << *this << "] receiving: " << msg << std::endl;
         if(m_current_role == Role::Candidate && msg.getTerm() == m_current_term && msg.granted)
         {
             m_votes_received.insert(msg.getId());
-            std::cout << "Id: " << m_id << ", " << m_votes_received.size() <<" Votes received: ";
-            for(auto const & vote : m_votes_received)
-                std::cout << vote << " ";
-            std::cout << std::endl;
+            // std::cout << "Id: " << m_id << ", " << m_votes_received.size() <<" Votes received: ";
+            // for(auto const & vote : m_votes_received)
+            //     std::cout << vote << " ";
+            // std::cout << std::endl;
             if(m_votes_received.size() >= quorum())
             {
                 m_current_role = Role::Leader;
@@ -321,7 +311,7 @@ namespace consensus
                     if(node.getId() != getId())
                         replicate_log(getId(), node.getId());
                 });
-                std::cout << "Id " << m_id << " is Leader and done electing" << std::endl;
+                std::cout << *this << " is Leader and done electing" << std::endl;
             }
         }
         else if(msg.getTerm() > m_current_term)
@@ -330,13 +320,13 @@ namespace consensus
             m_current_role = Role::Follower;
             m_voted_for = NoneId;
             cancel_election_timer();
-            std::cout << "Id " << m_id << " assumes to be Follower and done electing" << std::endl;
+            std::cout << *this << " assumes to be Follower and done electing" << std::endl;
         }
     }
 
     void RaftNode::receive(LogRequest const & msg)
     {
-        std::cout << __PRETTY_FUNCTION__ << ", [" << *this << "] receiving: " << msg << std::endl;
+        //std::cout << __PRETTY_FUNCTION__ << ", [" << *this << "] receiving: " << msg << std::endl;
         if(msg.getTerm() > m_current_term)
         {
             m_current_term = msg.getTerm();
@@ -350,38 +340,43 @@ namespace consensus
             m_current_leader = msg.getId();
         }
         bool log_ok = (m_log.size() >= msg.prefix_length) && (msg.prefix_length == 0 || m_log[msg.prefix_length-1].term == msg.prefix_term);
-        std::cout << *this << (log_ok ? " Log ok" : " Log not ok" ) << std::endl;
+        //std::cout << *this << (log_ok ? " Log ok" : " Log not ok" ) << " " << m_log.size() << " >= " << msg.prefix_length;
+        //if(msg.prefix_length > 0) std::cout << " && " << m_log[msg.prefix_length-1].term << " == " << msg.prefix_term  << " " << msg << std::endl;
+        //if(msg.prefix_length > 0) std::cout << "================>>>>>>>>" << m_log << std::endl;
         if(msg.getTerm() == m_current_term && log_ok)
         {
             append_entries(msg.prefix_length, msg.commit_length, msg.log);
             auto ack = msg.prefix_length + msg.log.size();
-            m_comm.send(LogResponse(getId(), m_current_term, ack, true), getId());
+            m_comm.send(LogResponse(getId(), m_current_term, ack, true), m_current_leader);
         }
         else 
         {
-            m_comm.send(LogResponse(getId(), m_current_term, 0, false), getId());
+            m_comm.send(LogResponse(getId(), m_current_term, 0, false), m_current_leader);
         }
     }
 
     void RaftNode::receive(LogResponse const & msg)
     {
-        std::cout << __PRETTY_FUNCTION__ << ", [" << *this << "] receiving: " << msg << std::endl;
+        //std::cout << __PRETTY_FUNCTION__ << ", [" << *this << "] receiving: " << msg << std::endl;
         if(msg.getTerm() == m_current_term && m_current_role == Role::Leader)
         {
-            if(msg.success && msg.ack >= m_comm.getAckedLength(msg.getId()))
+            //std::cout << "//////////////////////////////////" <<(msg.success ? "yay!" : "no!") << ", Ack: " << msg.ack << ", " << m_acked_length[msg.getId()] << std::endl;
+            if(msg.success && msg.ack >= m_acked_length[msg.getId()])
             {
-                m_comm.setSentLength(msg.getId(), msg.ack);
-                m_comm.setAckedLength(msg.getId(), msg.ack);
+                m_sent_length[msg.getId()] = msg.ack;
+                m_acked_length[msg.getId()] = msg.ack;
+                // std::cout << "................." << m_sent_length[msg.getId()] << ", " << m_acked_length[msg.getId()] << std::endl;
                 commit_log_entries();
             }
-            else if(m_comm.getSentLength(msg.getId()) > 0)
+            else if(m_sent_length[msg.getId()] > 0)
             {
-                m_comm.setSentLength(msg.getId(), m_comm.getSentLength(msg.getId()));
+                m_sent_length[msg.getId()] = m_sent_length[msg.getId()] - 1;
                 replicate_log(getId(), msg.getId());
             }
         }
         else if(msg.term > m_current_term)
         {
+            //std::cout << "\\\\\\\\\\\\\\\\\\\\\\\\\\" << std::endl;
             m_current_term = msg.getTerm();
             m_current_role = Role::Follower;
             m_voted_for = NoneId;
@@ -406,7 +401,7 @@ namespace consensus
     {
         if(m_tainted)
         {
-            std::cout << *this << " is tainted" << std::endl;
+            //std::cout << *this << " is tainted" << std::endl;
             recovery();
         }
 
@@ -417,7 +412,7 @@ namespace consensus
             auto no_vote = m_voted_for == NoneId;
             if(timeout || no_vote)  
             {
-                std::cout << *this << " is electing, because: " << (timeout ? "timeout " : "") << (no_vote ? "not voted for anyone" : "") << std::endl;
+                //std::cout << *this << " is electing, because: " << (timeout ? "timeout " : "") << (no_vote ? "not voted for anyone" : "") << std::endl;
                 initialize_election();  
                 m_heartbeat_timer = std::chrono::steady_clock::now();
             } 
@@ -426,7 +421,7 @@ namespace consensus
         {            
             if(m_current_leader == NoneId)
             {
-                std::cout << *this << " has no leader starting election timer" << std::endl;
+                //std::cout << *this << " has no leader starting election timer" << std::endl;
                 start_election_timer();
             }
 

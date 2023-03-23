@@ -16,6 +16,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 
 
@@ -31,8 +32,8 @@ class RaftNode : public NodeBase
     Role         m_current_role {Role::Follower};
     IdType       m_current_leader {NoneId};
     VoteListType m_votes_received {};
-    std::size_t  m_sent_length {0};
-    std::size_t  m_acked_length {0};
+    std::unordered_map<IdType, std::size_t>  m_sent_length {};
+    std::unordered_map<IdType, std::size_t>  m_acked_length {};
 
     CommunicatorBase & m_comm;
     std::atomic<bool> running {false};
@@ -58,10 +59,6 @@ public:
 
     IdType getId() const final;
     void setId(IdType id) final;
-    std::size_t getAckedLength() const final;
-    void setAckedLength(std::size_t length) final;
-    std::size_t getSentLength() const final;
-    void setSentLength(std::size_t length) final;
     
     void broadcast(MessageBase const & msg) final;
 
@@ -112,7 +109,7 @@ private:
     template<typename T>
     void receive(T const & msg)
     {
-        std::cout << __PRETTY_FUNCTION__ << ", [" << *this << "] receiving: " << msg << std::endl;
+        //std::cout << __PRETTY_FUNCTION__ << ", [" << *this << "] receiving: " << msg << std::endl;
         m_log.emplace_back(m_current_term, msg);
     }
 

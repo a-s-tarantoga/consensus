@@ -30,7 +30,7 @@ int main(int argc, char** argv)
     for(std::size_t i{0}; i<10; ++i)
     {
         nodes.emplace_back(std::make_unique<consensus::RaftNode>(manager));
-        nodes.back()->setAppCallback([i=i](consensus::LogEntry const & entry){ std::cout << "node" << i << ": " << entry << std::endl;});
+        nodes.back()->setAppCallback([i=i](consensus::LogEntry const & entry){ std::cout << ">>>>>>>>>>>>> node" << i << ": " << entry << std::endl;});
     }
     for(auto & node : nodes)
         node->start();

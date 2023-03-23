@@ -39,13 +39,6 @@ public:
 
     void for_each(std::function<void(NodeBase &)> f) final;
 
-    std::size_t getAckedLength(IdType id) final;
-    void setAckedLength(IdType id, std::size_t length) final;
-
-    std::size_t getSentLength(IdType id) final;
-    void setSentLength(IdType id, std::size_t length) final;
-
-
 private:
     ContainerType m_nodes;
 };

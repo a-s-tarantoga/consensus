@@ -48,23 +48,4 @@ void LocalNodeManager::for_each(std::function<void(NodeBase &)> f)
         f(*node);
 }
 
-std::size_t LocalNodeManager::getAckedLength(IdType id)
-{ 
-    return m_nodes[id]->getAckedLength();
-}
-void LocalNodeManager::setAckedLength(IdType id, std::size_t length)
-{ 
-    m_nodes[id]->setAckedLength(length); 
-}
-
-std::size_t LocalNodeManager::getSentLength(IdType id)
-{ 
-    return m_nodes[id]->getSentLength(); 
-}
-
-void LocalNodeManager::setSentLength(IdType id, std::size_t length)
-{ 
-    m_nodes[id]->setSentLength(length); 
-}
-
 }
